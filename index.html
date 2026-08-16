@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIKAP — Academic Database Prototype</title>
+  <meta name="description" content="Interactive normalized academic database schema prototype powered by in-browser SQLite." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#eef6ff', 100: '#d9ebff', 200: '#bcdcff', 300: '#8ec6ff',
+              400: '#58a5ff', 500: '#3384ff', 600: '#1a64f5', 700: '#134fe1',
+              800: '#1640b6', 900: '#193a8f', 950: '#142557',
+            },
+            surface: {
+              50:  '#f7f8fa', 100: '#eef0f4', 200: '#dde1e8',
+              700: '#2a2f3a', 800: '#1e222b', 900: '#14171e', 950: '#0c0e13',
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Global ── */
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #0c0e13; color: #eef0f4; }
+
+    /* ── Custom scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3384ff; }
+
+    /* ── Animations ── */
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+    @keyframes pulse-ring { 0% { transform:scale(.9); opacity:.7 } 50% { transform:scale(1.05); opacity:1 } 100% { transform:scale(.9); opacity:.7 } }
+    @keyframes shimmer  { 0% { background-position:-200% 0 } 100% { background-position:200% 0 } }
+    .anim-fade-up  { animation: fadeUp .45s cubic-bezier(.22,1,.36,1) both; }
+    .anim-pulse    { animation: pulse-ring 2.4s ease-in-out infinite; }
+    .shimmer-bg    { background: linear-gradient(90deg,transparent 0%,rgba(255,255,255,.04) 50%,transparent 100%); background-size:200% 100%; animation:shimmer 2.5s infinite; }
+
+    /* ── Glass card ── */
+    .glass {
+      background: rgba(30,34,43,.55);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: 16px;
+    }
+
+    /* ── Tab system ── */
+    .tab-btn { position:relative; transition: color .25s, background .25s; }
+    .tab-btn::after {
+      content:''; position:absolute; bottom:-2px; left:50%; width:0; height:2px;
+      background: linear-gradient(90deg,#3384ff,#58a5ff); border-radius:1px;
+      transition: width .3s, left .3s;
+    }
+    .tab-btn.active { color:#58a5ff; }
+    .tab-btn.active::after { width:60%; left:20%; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; animation: fadeUp .35s ease both; }
+
+    /* ── Table styling ── */
+    .data-table { width:100%; border-collapse:separate; border-spacing:0; font-size:.82rem; }
+    .data-table thead th {
+      position:sticky; top:0; z-index:2;
+      padding:10px 14px; text-align:left; font-weight:600; letter-spacing:.03em; text-transform:uppercase; font-size:.7rem;
+      background:rgba(20,23,30,.92); color:#8ec6ff; border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .data-table tbody tr { transition: background .2s; }
+    .data-table tbody tr:hover { background:rgba(51,132,255,.06); }
+    .data-table tbody td { padding:9px 14px; border-bottom:1px solid rgba(255,255,255,.04); color:#dde1e8; }
+
+    /* ── Form fields ── */
+    .field { display:flex; flex-direction:column; gap:4px; }
+    .field label { font-size:.72rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:#8ec6ff; }
+    .field input, .field select, .field textarea {
+      padding:10px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.08);
+      background:rgba(14,17,22,.7); color:#eef0f4; font-size:.85rem; transition: border-color .25s, box-shadow .25s;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline:none; border-color:#3384ff; box-shadow:0 0 0 3px rgba(51,132,255,.15);
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:10px 22px; border:none; border-radius:10px; cursor:pointer;
+      font-weight:600; font-size:.85rem; color:#fff;
+      background:linear-gradient(135deg,#1a64f5,#3384ff);
+      box-shadow:0 2px 12px rgba(51,132,255,.25);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(51,132,255,.35); }
+    .btn-primary:active { transform:translateY(0); }
+    .btn-secondary {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:10px 22px; border:1px solid rgba(255,255,255,.1); border-radius:10px; cursor:pointer;
+      font-weight:600; font-size:.85rem; color:#dde1e8; background:rgba(30,34,43,.5);
+      transition: background .2s, border-color .2s;
+    }
+    .btn-secondary:hover { background:rgba(42,47,58,.8); border-color:rgba(255,255,255,.18); }
+
+    .btn-danger {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:10px 22px; border:none; border-radius:10px; cursor:pointer;
+      font-weight:600; font-size:.85rem; color:#fff;
+      background:linear-gradient(135deg,#dc2626,#ef4444);
+      box-shadow:0 2px 12px rgba(239,68,68,.25);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn-danger:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(239,68,68,.35); }
+
+    /* ── Toast ── */
+    .toast-container { position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+    .toast {
+      pointer-events:auto; padding:12px 20px; border-radius:12px; font-size:.82rem; font-weight:500;
+      backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,.08);
+      animation: fadeUp .35s ease both; transition: opacity .3s;
+    }
+    .toast-success { background:rgba(16,185,129,.18); color:#6ee7b7; border-color:rgba(16,185,129,.25); }
+    .toast-error   { background:rgba(239,68,68,.18);  color:#fca5a5; border-color:rgba(239,68,68,.25); }
+    .toast-info    { background:rgba(51,132,255,.18);  color:#8ec6ff; border-color:rgba(51,132,255,.25); }
+
+    /* ── Stat cards ── */
+    .stat-card {
+      position:relative; overflow:hidden; padding:20px 24px; border-radius:14px;
+      background:rgba(30,34,43,.45); border:1px solid rgba(255,255,255,.06);
+      transition: transform .25s, border-color .25s;
+    }
+    .stat-card:hover { transform:translateY(-2px); border-color:rgba(51,132,255,.2); }
+    .stat-card .stat-icon { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.1rem; }
+    .stat-card .stat-value { font-size:1.7rem; font-weight:800; letter-spacing:-.02em; }
+    .stat-card .stat-label { font-size:.72rem; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:#8ec6ff; }
+
+    /* ── Report card ── */
+    .report-header { background:linear-gradient(135deg,rgba(26,100,245,.12),rgba(51,132,255,.06)); border:1px solid rgba(51,132,255,.15); border-radius:14px; padding:24px; }
+
+    /* ── SQL console ── */
+    #sqlInput {
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+      tab-size:4; line-height:1.6;
+    }
+
+    /* ── Responsive fixes ── */
+    @media (max-width:768px) {
+      .stat-grid { grid-template-columns:1fr 1fr !important; }
+    }
+    @media (max-width:480px) {
+      .stat-grid { grid-template-columns:1fr !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased">
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║          TOAST CONTAINER             ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║            HEADER                   ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<header class="sticky top-0 z-50 glass border-b border-white/5" style="border-radius:0">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-600 to-brand-400 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-brand-500/20">S</div>
+      <div>
+        <h1 class="text-base font-bold tracking-tight">SIKAP</h1>
+        <p class="text-[.62rem] font-medium text-brand-400 tracking-widest uppercase -mt-0.5">Academic Database Prototype</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div id="dbStatus" class="flex items-center gap-2 text-xs font-medium text-yellow-400">
+        <span class="w-2 h-2 rounded-full bg-yellow-400 anim-pulse"></span> Initializing…
+      </div>
+      <button id="btnResetDB" class="btn-danger text-xs py-2 px-4 hidden" onclick="resetDB()">⟳ Reset DB</button>
+    </div>
+  </div>
+</header>
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║           MAIN CONTENT              ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+  <!-- ── Stats Row ── -->
+  <section id="statsSection" class="mb-8 anim-fade-up" style="animation-delay:.1s">
+    <div class="stat-grid grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" id="statsGrid">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── Seed Banner ── -->
+  <section id="seedBanner" class="mb-8 glass p-6 flex flex-col sm:flex-row items-center gap-4 anim-fade-up" style="animation-delay:.2s">
+    <div class="flex-1">
+      <h2 class="text-lg font-bold mb-1">🗄️ Initialize Sample Data</h2>
+      <p class="text-sm text-surface-200">Populate all lookup tables with realistic sample records — departments, faculty, subjects, academic years, sections, users, and more.</p>
+    </div>
+    <button id="btnSeed" class="btn-primary whitespace-nowrap" onclick="seedDatabase()">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+      Auto-Seed Database
+    </button>
+  </section>
+
+  <!-- ── Tab Navigation ── -->
+  <nav class="flex gap-1 mb-6 overflow-x-auto pb-1 anim-fade-up" style="animation-delay:.25s" id="tabNav">
+    <button class="tab-btn active px-4 py-2.5 rounded-lg text-sm font-semibold text-surface-200 hover:text-white" data-tab="students">👨‍🎓 Students</button>
+    <button class="tab-btn px-4 py-2.5 rounded-lg text-sm font-semibold text-surface-200 hover:text-white" data-tab="enrollment">📋 Enrollment</button>
+    <button class="tab-btn px-4 py-2.5 rounded-lg text-sm font-semibold text-surface-200 hover:text-white" data-tab="grades">📝 Grades</button>
+    <button class="tab-btn px-4 py-2.5 rounded-lg text-sm font-semibold text-surface-200 hover:text-white" data-tab="reportcard">🎓 Report Card</button>
+    <button class="tab-btn px-4 py-2.5 rounded-lg text-sm font-semibold text-surface-200 hover:text-white" data-tab="console">⌨️ SQL Console</button>
+    <button class="tab-btn px-4 py-2.5 rounded-lg text-sm font-semibold text-surface-200 hover:text-white" data-tab="browse">🔍 Browse Tables</button>
+  </nav>
+
+  <!-- ═══════════════ TAB: Students ═══════════════ -->
+  <div class="tab-content active" id="tab-students">
+    <div class="grid lg:grid-cols-5 gap-6">
+      <!-- Form -->
+      <div class="lg:col-span-2 glass p-6">
+        <h3 class="text-base font-bold mb-4 flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-brand-500/15 flex items-center justify-center text-brand-400 text-sm">+</span>
+          Register New Student
+        </h3>
+        <form id="formStudent" class="space-y-3" onsubmit="return addStudent(event)">
+          <div class="field"><label for="sName">Full Name</label><input id="sName" required placeholder="Juan A. Dela Cruz" /></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field"><label for="sBirthDate">Birth Date</label><input id="sBirthDate" type="date" required /></div>
+            <div class="field"><label for="sGender">Gender</label>
+              <select id="sGender" required><option value="">Select…</option><option>Male</option><option>Female</option><option>Other</option></select>
+            </div>
+          </div>
+          <div class="field"><label for="sAddress">Address</label><input id="sAddress" placeholder="123 Main St, Quezon City" /></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field"><label for="sContact">Contact Number</label><input id="sContact" placeholder="09171234567" /></div>
+            <div class="field"><label for="sLRN">LRN</label><input id="sLRN" placeholder="123456789012" /></div>
+          </div>
+          <div class="field"><label for="sEmail">Email</label><input id="sEmail" type="email" placeholder="juan@email.com" /></div>
+          <button type="submit" class="btn-primary w-full justify-center mt-2">Register Student</button>
+        </form>
+      </div>
+      <!-- Table -->
+      <div class="lg:col-span-3 glass p-6 overflow-hidden">
+        <h3 class="text-base font-bold mb-4">Student Records</h3>
+        <div class="overflow-auto max-h-[480px] rounded-xl border border-white/5">
+          <table class="data-table" id="tblStudents"><thead><tr></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB: Enrollment ═══════════════ -->
+  <div class="tab-content" id="tab-enrollment">
+    <div class="grid lg:grid-cols-5 gap-6">
+      <div class="lg:col-span-2 glass p-6">
+        <h3 class="text-base font-bold mb-4 flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400 text-sm">📋</span>
+          Create Enrollment
+        </h3>
+        <form id="formEnrollment" class="space-y-3" onsubmit="return addEnrollment(event)">
+          <div class="field"><label for="eStudent">Student</label><select id="eStudent" required></select></div>
+          <div class="field"><label for="eSection">Section</label><select id="eSection" required></select></div>
+          <div class="field"><label for="eAcadYear">Academic Year</label><select id="eAcadYear" required></select></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field"><label for="eYearLevel">Year Level</label>
+              <select id="eYearLevel" required><option value="">Select…</option><option>Grade 11</option><option>Grade 12</option></select>
+            </div>
+            <div class="field"><label for="eStrand">Strand</label>
+              <select id="eStrand" required><option value="">Select…</option><option>STEM</option><option>ABM</option><option>HUMSS</option><option>GAS</option><option>TVL-ICT</option></select>
+            </div>
+          </div>
+          <div class="field"><label for="eDate">Enrollment Date</label><input id="eDate" type="date" required /></div>
+          <div class="field"><label for="eStatus">Status</label>
+            <select id="eStatus" required><option>Enrolled</option><option>Pending</option><option>Dropped</option></select>
+          </div>
+          <button type="submit" class="btn-primary w-full justify-center mt-2">Create Enrollment</button>
+        </form>
+      </div>
+      <div class="lg:col-span-3 glass p-6 overflow-hidden">
+        <h3 class="text-base font-bold mb-4">Enrollment Records</h3>
+        <div class="overflow-auto max-h-[480px] rounded-xl border border-white/5">
+          <table class="data-table" id="tblEnrollments"><thead><tr></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB: Grades ═══════════════ -->
+  <div class="tab-content" id="tab-grades">
+    <div class="grid lg:grid-cols-5 gap-6">
+      <div class="lg:col-span-2 glass p-6">
+        <h3 class="text-base font-bold mb-4 flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 text-sm">📝</span>
+          Submit Grade
+        </h3>
+        <form id="formGrade" class="space-y-3" onsubmit="return addGrade(event)">
+          <div class="field"><label for="gEnrollment">Enrollment</label><select id="gEnrollment" required></select></div>
+          <div class="field"><label for="gSubject">Subject</label><select id="gSubject" required></select></div>
+          <div class="field"><label for="gGrade">Grade (0–100)</label><input id="gGrade" type="number" min="0" max="100" step="0.01" required placeholder="95.50" /></div>
+          <button type="submit" class="btn-primary w-full justify-center mt-2">Submit Grade</button>
+        </form>
+      </div>
+      <div class="lg:col-span-3 glass p-6 overflow-hidden">
+        <h3 class="text-base font-bold mb-4">Grade Records</h3>
+        <div class="overflow-auto max-h-[480px] rounded-xl border border-white/5">
+          <table class="data-table" id="tblGrades"><thead><tr></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB: Report Card ═══════════════ -->
+  <div class="tab-content" id="tab-reportcard">
+    <div class="glass p-6">
+      <h3 class="text-base font-bold mb-4 flex items-center gap-2">
+        <span class="w-7 h-7 rounded-lg bg-violet-500/15 flex items-center justify-center text-violet-400 text-sm">🎓</span>
+        Derived Report Card
+      </h3>
+      <p class="text-xs text-surface-200 mb-4">This report is generated live via a SQL <code class="px-1.5 py-0.5 rounded bg-white/5 font-mono text-brand-400">JOIN</code> query — no redundant report table is stored.</p>
+      <div class="flex flex-wrap gap-3 mb-6">
+        <div class="field flex-1 min-w-[200px]"><label for="rcStudent">Student</label><select id="rcStudent"><option value="">— Select Student —</option></select></div>
+        <div class="field flex-1 min-w-[200px]"><label for="rcAcadYear">Academic Year</label><select id="rcAcadYear"><option value="">— All —</option></select></div>
+        <div class="flex items-end"><button class="btn-primary" onclick="generateReportCard()">Generate Report</button></div>
+      </div>
+      <div id="reportCardOutput"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB: SQL Console ═══════════════ -->
+  <div class="tab-content" id="tab-console">
+    <div class="glass p-6">
+      <h3 class="text-base font-bold mb-1 flex items-center gap-2">
+        <span class="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center text-cyan-400 text-sm">⌨️</span>
+        SQL Runner
+      </h3>
+      <p class="text-xs text-surface-200 mb-4">Execute any SQL statement against the live in-memory SQLite database.</p>
+      <div class="field mb-4">
+        <label for="sqlInput">SQL Query</label>
+        <textarea id="sqlInput" rows="6" placeholder="SELECT s.Name, sub.SubjectName, g.StudentGrade&#10;FROM Grades g&#10;JOIN Enrollment e ON g.EnrollmentID = e.EnrollmentID&#10;JOIN Student s ON e.StudentID = s.StudentID&#10;JOIN Subject sub ON g.SubjectID = sub.SubjectID;"></textarea>
+      </div>
+      <div class="flex gap-3 mb-6 flex-wrap">
+        <button class="btn-primary" onclick="runSQL()">▶ Run Query</button>
+        <button class="btn-secondary" onclick="document.getElementById('sqlInput').value='';document.getElementById('sqlOutput').innerHTML=''">Clear</button>
+        <div class="flex-1"></div>
+        <select id="sqlSnippets" class="rounded-lg border border-white/10 bg-surface-900 text-surface-200 text-xs px-3 py-2" onchange="loadSnippet(this.value)">
+          <option value="">— Quick Snippets —</option>
+          <option value="tables">Show all tables</option>
+          <option value="students">All students</option>
+          <option value="enrollments">Enrollments with names</option>
+          <option value="grades">All grades with details</option>
+          <option value="gpa">GPA per student</option>
+          <option value="faculty">Faculty list</option>
+          <option value="logs">Activity logs</option>
+        </select>
+      </div>
+      <div id="sqlOutput" class="overflow-auto max-h-[450px] rounded-xl border border-white/5"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB: Browse Tables ═══════════════ -->
+  <div class="tab-content" id="tab-browse">
+    <div class="glass p-6">
+      <h3 class="text-base font-bold mb-4 flex items-center gap-2">
+        <span class="w-7 h-7 rounded-lg bg-pink-500/15 flex items-center justify-center text-pink-400 text-sm">🔍</span>
+        Browse All Tables
+      </h3>
+      <div class="flex flex-wrap gap-2 mb-6" id="browseButtons"></div>
+      <div id="browseOutput" class="overflow-auto max-h-[500px] rounded-xl border border-white/5"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║            FOOTER                   ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<footer class="text-center py-6 text-xs text-surface-200/40">
+  SIKAP Academic Database Prototype · Powered by SQL.js &amp; Tailwind CSS · In-Memory SQLite
+</footer>
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║          SCRIPTS                    ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+<script>
+// ═══════════════════════════════════════════
+//  GLOBAL STATE
+// ═══════════════════════════════════════════
+let db = null;
+const WASM_URL = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.wasm';
+
+// ═══════════════════════════════════════════
+//  TOAST NOTIFICATIONS
+// ═══════════════════════════════════════════
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 350); }, 3200);
+}
+
+// ═══════════════════════════════════════════
+//  TAB SWITCHING
+// ═══════════════════════════════════════════
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ═══════════════════════════════════════════
+//  DATABASE INITIALIZATION
+// ═══════════════════════════════════════════
+async function initDB() {
+  try {
+    const SQL = await initSqlJs({ locateFile: () => WASM_URL });
+    db = new SQL.Database();
+    createSchema();
+    updateStatus('connected');
+    document.getElementById('btnResetDB').classList.remove('hidden');
+    refreshAll();
+    toast('Database initialized successfully', 'success');
+  } catch (err) {
+    updateStatus('error');
+    toast('Failed to initialize SQL.js: ' + err.message, 'error');
+    console.error(err);
+  }
+}
+
+function updateStatus(state) {
+  const el = document.getElementById('dbStatus');
+  if (state === 'connected') {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 anim-pulse"></span><span class="text-emerald-400">Connected</span>';
+  } else if (state === 'error') {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span><span class="text-red-400">Error</span>';
+  }
+}
+
+// ═══════════════════════════════════════════
+//  DDL: CREATE SCHEMA
+// ═══════════════════════════════════════════
+function createSchema() {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS Department (
+      DepartmentID   INTEGER PRIMARY KEY AUTOINCREMENT,
+      DepartmentName TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS Faculty (
+      EmployeeID   INTEGER PRIMARY KEY AUTOINCREMENT,
+      Name         TEXT NOT NULL,
+      BirthDate    TEXT,
+      Gender       TEXT CHECK(Gender IN ('Male','Female','Other')),
+      Address      TEXT,
+      ContactNumber TEXT,
+      Email        TEXT,
+      Position     TEXT,
+      HireDate     TEXT,
+      DepartmentID INTEGER,
+      FOREIGN KEY (DepartmentID) REFERENCES Department(DepartmentID)
+    );
+
+    CREATE TABLE IF NOT EXISTS Section (
+      SectionID   INTEGER PRIMARY KEY AUTOINCREMENT,
+      SectionName TEXT NOT NULL,
+      AdviserID   INTEGER,
+      FOREIGN KEY (AdviserID) REFERENCES Faculty(EmployeeID)
+    );
+
+    CREATE TABLE IF NOT EXISTS AcademicYear (
+      AcadYearID INTEGER PRIMARY KEY AUTOINCREMENT,
+      Term       TEXT NOT NULL,
+      StartDate  TEXT,
+      EndDate    TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS Student (
+      StudentID     INTEGER PRIMARY KEY AUTOINCREMENT,
+      Name          TEXT NOT NULL,
+      BirthDate     TEXT,
+      Gender        TEXT CHECK(Gender IN ('Male','Female','Other')),
+      Address       TEXT,
+      ContactNumber TEXT,
+      Email         TEXT,
+      LRN           TEXT UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS Enrollment (
+      EnrollmentID     INTEGER PRIMARY KEY AUTOINCREMENT,
+      EnrollmentDate   TEXT,
+      EnrollmentStatus TEXT DEFAULT 'Enrolled' CHECK(EnrollmentStatus IN ('Enrolled','Pending','Dropped')),
+      StudentID        INTEGER NOT NULL,
+      SectionID        INTEGER NOT NULL,
+      AcadYearID       INTEGER NOT NULL,
+      YearLevel        TEXT,
+      Strand           TEXT,
+      FOREIGN KEY (StudentID) REFERENCES Student(StudentID),
+      FOREIGN KEY (SectionID) REFERENCES Section(SectionID),
+      FOREIGN KEY (AcadYearID) REFERENCES AcademicYear(AcadYearID)
+    );
+
+    CREATE TABLE IF NOT EXISTS Subject (
+      SubjectID   INTEGER PRIMARY KEY AUTOINCREMENT,
+      SubjectCode TEXT NOT NULL UNIQUE,
+      SubjectName TEXT NOT NULL,
+      Units       INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS Grades (
+      EnrollmentID INTEGER NOT NULL,
+      SubjectID    INTEGER NOT NULL,
+      StudentGrade REAL CHECK(StudentGrade >= 0 AND StudentGrade <= 100),
+      PRIMARY KEY (EnrollmentID, SubjectID),
+      FOREIGN KEY (EnrollmentID) REFERENCES Enrollment(EnrollmentID),
+      FOREIGN KEY (SubjectID)    REFERENCES Subject(SubjectID)
+    );
+
+    CREATE TABLE IF NOT EXISTS Role (
+      RoleID     INTEGER PRIMARY KEY AUTOINCREMENT,
+      RoleName   TEXT NOT NULL,
+      Permission TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS User (
+      UserID   INTEGER PRIMARY KEY AUTOINCREMENT,
+      Username TEXT NOT NULL UNIQUE,
+      Password TEXT NOT NULL,
+      RoleID   INTEGER,
+      FOREIGN KEY (RoleID) REFERENCES Role(RoleID)
+    );
+
+    CREATE TABLE IF NOT EXISTS ActivityLogs (
+      LogID     INTEGER PRIMARY KEY AUTOINCREMENT,
+      UserID    INTEGER,
+      Action    TEXT,
+      Timestamp TEXT DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (UserID) REFERENCES User(UserID)
+    );
+  `);
+}
+
+// ═══════════════════════════════════════════
+//  SEED DATA
+// ═══════════════════════════════════════════
+function seedDatabase() {
+  try {
+    // Departments
+    db.run(`INSERT OR IGNORE INTO Department (DepartmentName) VALUES
+      ('Science & Technology'), ('Business & Accountancy'),
+      ('Humanities & Social Sciences'), ('General Academics'),
+      ('Technical-Vocational');`);
+
+    // Faculty
+    db.run(`INSERT OR IGNORE INTO Faculty (Name, BirthDate, Gender, Address, ContactNumber, Email, Position, HireDate, DepartmentID) VALUES
+      ('Dr. Maria Santos',    '1978-03-15','Female','Quezon City','09171234567','m.santos@school.edu','Department Head','2010-06-01',1),
+      ('Prof. Jose Reyes',    '1982-07-22','Male',  'Makati City','09182345678','j.reyes@school.edu', 'Senior Teacher', '2012-08-15',2),
+      ('Ms. Ana Garcia',      '1990-11-08','Female','Pasig City', '09193456789','a.garcia@school.edu','Teacher',        '2018-01-10',3),
+      ('Mr. Carlos Mendoza',  '1985-05-30','Male',  'Manila',     '09204567890','c.mendoza@school.edu','Teacher',       '2015-03-20',1),
+      ('Dr. Liza Tan',        '1975-09-12','Female','Taguig City','09215678901','l.tan@school.edu',   'Principal',      '2005-07-01',4),
+      ('Mr. Roberto Cruz',    '1988-01-25','Male',  'Caloocan',   '09226789012','r.cruz@school.edu',  'Teacher',        '2019-06-15',5),
+      ('Ms. Patricia Lim',    '1992-04-18','Female','Mandaluyong','09237890123','p.lim@school.edu',   'Teacher',        '2020-08-01',2),
+      ('Mr. Daniel Villanueva','1980-12-03','Male', 'Las Piñas',  '09248901234','d.villa@school.edu', 'Coordinator',   '2008-11-10',3);`);
+
+    // Sections
+    db.run(`INSERT OR IGNORE INTO Section (SectionName, AdviserID) VALUES
+      ('STEM-Aristotle',  1), ('STEM-Einstein',  4),
+      ('ABM-Rizal',       2), ('ABM-Bonifacio',  7),
+      ('HUMSS-Plato',     3), ('HUMSS-Socrates',  8),
+      ('GAS-Newton',      5), ('TVL-ICT-Turing', 6);`);
+
+    // Academic Years
+    db.run(`INSERT OR IGNORE INTO AcademicYear (Term, StartDate, EndDate) VALUES
+      ('1st Semester 2025-2026', '2025-08-04','2025-12-19'),
+      ('2nd Semester 2025-2026', '2026-01-05','2026-05-29'),
+      ('1st Semester 2026-2027', '2026-08-03','2026-12-18'),
+      ('2nd Semester 2026-2027', '2027-01-04','2027-05-28');`);
+
+    // Subjects
+    db.run(`INSERT OR IGNORE INTO Subject (SubjectCode, SubjectName, Units) VALUES
+      ('MATH101','General Mathematics',3),
+      ('SCI101', 'Earth and Life Science',3),
+      ('ENG101', 'Oral Communication',3),
+      ('FIL101', 'Komunikasyon at Pananaliksik',3),
+      ('PE101',  'Physical Education & Health',2),
+      ('STEM201','Pre-Calculus',3),
+      ('STEM202','General Biology 1',3),
+      ('ABM201', 'Fundamentals of ABM 1',3),
+      ('HUM201', 'Introduction to World Religions',3),
+      ('ICT201', 'Computer Programming 1',3),
+      ('SS101',  'Understanding Culture, Society & Politics',3),
+      ('PHILO101','Introduction to Philosophy',3);`);
+
+    // Roles
+    db.run(`INSERT OR IGNORE INTO Role (RoleName, Permission) VALUES
+      ('Admin',   'ALL'),
+      ('Registrar','READ,WRITE_ENROLLMENT,WRITE_GRADES'),
+      ('Teacher',  'READ,WRITE_GRADES'),
+      ('Student',  'READ_OWN');`);
+
+    // Users
+    db.run(`INSERT OR IGNORE INTO User (Username, Password, RoleID) VALUES
+      ('admin',    'admin123',    1),
+      ('registrar','reg2025',     2),
+      ('msantos',  'teacher2025', 3),
+      ('jreyes',   'teacher2025', 3),
+      ('student1', 'student2025', 4);`);
+
+    // Activity Logs
+    db.run(`INSERT INTO ActivityLogs (UserID, Action) VALUES
+      (1, 'System initialized and database seeded'),
+      (1, 'Admin logged in'),
+      (2, 'Registrar accessed enrollment module');`);
+
+    // Sample Students
+    db.run(`INSERT OR IGNORE INTO Student (Name, BirthDate, Gender, Address, ContactNumber, Email, LRN) VALUES
+      ('Juan A. Dela Cruz',   '2008-03-15','Male',  'Brgy. Pinyahan, Quezon City','09171111111','juan@email.com',  '100100100001'),
+      ('Maria C. Santos',     '2008-07-22','Female','Brgy. Poblacion, Makati',     '09172222222','maria@email.com', '100100100002'),
+      ('Pedro B. Reyes',      '2007-11-08','Male',  'Brgy. Ugong, Pasig',          '09173333333','pedro@email.com', '100100100003'),
+      ('Ana R. Garcia',       '2008-01-30','Female','Brgy. Mariana, Quezon City',  '09174444444','ana.g@email.com', '100100100004'),
+      ('Carlos M. Tan',       '2007-09-12','Male',  'Brgy. San Antonio, Makati',   '09175555555','carlos@email.com','100100100005');`);
+
+    // Sample Enrollments
+    db.run(`INSERT OR IGNORE INTO Enrollment (EnrollmentDate, EnrollmentStatus, StudentID, SectionID, AcadYearID, YearLevel, Strand) VALUES
+      ('2025-07-20','Enrolled',1,1,1,'Grade 11','STEM'),
+      ('2025-07-21','Enrolled',2,3,1,'Grade 11','ABM'),
+      ('2025-07-22','Enrolled',3,5,1,'Grade 11','HUMSS'),
+      ('2025-07-23','Enrolled',4,1,1,'Grade 11','STEM'),
+      ('2025-07-24','Enrolled',5,8,1,'Grade 11','TVL-ICT');`);
+
+    // Sample Grades
+    db.run(`INSERT OR REPLACE INTO Grades (EnrollmentID, SubjectID, StudentGrade) VALUES
+      (1,1,92.5),(1,2,88.0),(1,3,95.0),(1,4,90.5),(1,5,93.0),(1,6,89.0),(1,7,91.5),
+      (2,1,85.0),(2,3,88.5),(2,4,82.0),(2,5,90.0),(2,8,87.5),
+      (3,1,78.0),(3,3,92.0),(3,4,85.5),(3,5,88.0),(3,9,90.0),(3,11,86.0),
+      (4,1,96.0),(4,2,94.5),(4,3,91.0),(4,5,95.0),(4,6,97.0),
+      (5,1,82.0),(5,3,79.0),(5,5,85.0),(5,10,91.5);`);
+
+    refreshAll();
+    toast('🎉 Database seeded with sample data!', 'success');
+    logActivity(1, 'Database seeded with sample data');
+  } catch (err) {
+    toast('Seed error: ' + err.message, 'error');
+    console.error(err);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  RESET DATABASE
+// ═══════════════════════════════════════════
+function resetDB() {
+  if (!confirm('This will destroy all data and recreate the schema. Continue?')) return;
+  db.run("SELECT name FROM sqlite_master WHERE type='table'").map(r => {
+    // don't drop sqlite internals
+  });
+  // Easiest: close and re-create
+  db.close();
+  const SQL = db.constructor; // won't work — simpler to reload
+  location.reload();
+}
+
+// ═══════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════
+function query(sql, params = []) {
+  const results = db.exec(sql, params);
+  if (results.length === 0) return { columns: [], values: [] };
+  return results[0];
+}
+
+function run(sql, params = []) {
+  db.run(sql, params);
+}
+
+function logActivity(userId, action) {
+  try { run("INSERT INTO ActivityLogs (UserID, Action) VALUES (?, ?)", [userId, action]); } catch(e) {}
+}
+
+function renderTable(containerId, { columns, values }) {
+  const table = document.getElementById(containerId);
+  if (!table) return;
+  const thead = table.querySelector('thead tr');
+  const tbody = table.querySelector('tbody');
+  thead.innerHTML = columns.map(c => `<th>${esc(c)}</th>`).join('');
+  tbody.innerHTML = values.map(row =>
+    '<tr>' + row.map(v => `<td>${esc(v ?? '—')}</td>`).join('') + '</tr>'
+  ).join('');
+}
+
+function renderTableHTML({ columns, values }) {
+  if (!columns || columns.length === 0) return '<p class="text-surface-200 text-sm p-4">No results.</p>';
+  let html = '<table class="data-table"><thead><tr>';
+  html += columns.map(c => `<th>${esc(c)}</th>`).join('');
+  html += '</tr></thead><tbody>';
+  html += values.map(row =>
+    '<tr>' + row.map(v => `<td>${esc(v ?? '—')}</td>`).join('') + '</tr>'
+  ).join('');
+  html += '</tbody></table>';
+  return html;
+}
+
+function esc(v) {
+  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function populateSelect(id, sql, valueCol, labelCol) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const firstOpt = sel.querySelector('option');
+  sel.innerHTML = '';
+  if (firstOpt && firstOpt.value === '') sel.appendChild(firstOpt);
+  try {
+    const res = query(sql);
+    const vi = res.columns.indexOf(valueCol);
+    const li = res.columns.indexOf(labelCol);
+    res.values.forEach(row => {
+      const opt = document.createElement('option');
+      opt.value = row[vi];
+      opt.textContent = row[li];
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════
+//  REFRESH ALL VIEWS
+// ═══════════════════════════════════════════
+function refreshAll() {
+  refreshStats();
+  refreshStudents();
+  refreshEnrollments();
+  refreshGrades();
+  refreshDropdowns();
+  refreshBrowseButtons();
+}
+
+function refreshStats() {
+  const stats = [
+    { label:'Students',    icon:'👨‍🎓', color:'brand',   sql:"SELECT COUNT(*) as c FROM Student" },
+    { label:'Enrollments', icon:'📋', color:'emerald', sql:"SELECT COUNT(*) as c FROM Enrollment" },
+    { label:'Faculty',     icon:'👩‍🏫', color:'violet',  sql:"SELECT COUNT(*) as c FROM Faculty" },
+    { label:'Subjects',    icon:'📚', color:'amber',   sql:"SELECT COUNT(*) as c FROM Subject" },
+    { label:'Grades',      icon:'📝', color:'cyan',    sql:"SELECT COUNT(*) as c FROM Grades" },
+    { label:'Users',       icon:'👤', color:'pink',    sql:"SELECT COUNT(*) as c FROM User" },
+  ];
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = stats.map(s => {
+    let count = 0;
+    try { count = query(s.sql).values[0][0]; } catch(e) {}
+    return `
+      <div class="stat-card shimmer-bg">
+        <div class="flex items-center gap-3 mb-2">
+          <div class="stat-icon bg-${s.color}-500/15 text-${s.color}-400">${s.icon}</div>
+          <span class="stat-label">${s.label}</span>
+        </div>
+        <div class="stat-value text-white">${count}</div>
+      </div>`;
+  }).join('');
+}
+
+function refreshStudents() {
+  try {
+    renderTable('tblStudents', query("SELECT StudentID, Name, BirthDate, Gender, ContactNumber, Email, LRN FROM Student ORDER BY StudentID"));
+  } catch(e) {}
+}
+
+function refreshEnrollments() {
+  try {
+    renderTable('tblEnrollments', query(`
+      SELECT e.EnrollmentID, s.Name AS Student, sec.SectionName AS Section,
+             ay.Term AS AcademicYear, e.YearLevel, e.Strand, e.EnrollmentStatus, e.EnrollmentDate
+      FROM Enrollment e
+      JOIN Student s ON e.StudentID = s.StudentID
+      JOIN Section sec ON e.SectionID = sec.SectionID
+      JOIN AcademicYear ay ON e.AcadYearID = ay.AcadYearID
+      ORDER BY e.EnrollmentID
+    `));
+  } catch(e) {}
+}
+
+function refreshGrades() {
+  try {
+    renderTable('tblGrades', query(`
+      SELECT g.EnrollmentID, st.Name AS Student, sub.SubjectCode, sub.SubjectName, g.StudentGrade
+      FROM Grades g
+      JOIN Enrollment e ON g.EnrollmentID = e.EnrollmentID
+      JOIN Student st ON e.StudentID = st.StudentID
+      JOIN Subject sub ON g.SubjectID = sub.SubjectID
+      ORDER BY g.EnrollmentID, sub.SubjectCode
+    `));
+  } catch(e) {}
+}
+
+function refreshDropdowns() {
+  // Student selects
+  const studentSQL = "SELECT StudentID, StudentID || ' — ' || Name AS Label FROM Student ORDER BY Name";
+  populateSelect('eStudent', studentSQL, 'StudentID', 'Label');
+  populateSelect('rcStudent', studentSQL, 'StudentID', 'Label');
+  // Section
+  populateSelect('eSection', "SELECT SectionID, SectionID || ' — ' || SectionName AS Label FROM Section ORDER BY SectionName", 'SectionID', 'Label');
+  // Academic Year
+  const aySQL = "SELECT AcadYearID, AcadYearID || ' — ' || Term AS Label FROM AcademicYear ORDER BY StartDate";
+  populateSelect('eAcadYear', aySQL, 'AcadYearID', 'Label');
+  populateSelect('rcAcadYear', aySQL, 'AcadYearID', 'Label');
+  // Enrollment
+  populateSelect('gEnrollment', `
+    SELECT e.EnrollmentID, e.EnrollmentID || ' — ' || s.Name || ' (' || sec.SectionName || ')' AS Label
+    FROM Enrollment e JOIN Student s ON e.StudentID = s.StudentID JOIN Section sec ON e.SectionID = sec.SectionID
+    ORDER BY e.EnrollmentID
+  `, 'EnrollmentID', 'Label');
+  // Subject
+  populateSelect('gSubject', "SELECT SubjectID, SubjectCode || ' — ' || SubjectName AS Label FROM Subject ORDER BY SubjectCode", 'SubjectID', 'Label');
+}
+
+function refreshBrowseButtons() {
+  const tables = ['Student','Enrollment','AcademicYear','Section','Faculty','Subject','Department','Grades','User','Role','ActivityLogs'];
+  const container = document.getElementById('browseButtons');
+  container.innerHTML = tables.map(t =>
+    `<button class="btn-secondary text-xs py-2 px-4" onclick="browseTable('${t}')">${t}</button>`
+  ).join('');
+}
+
+function browseTable(name) {
+  try {
+    const res = query(`SELECT * FROM "${name}" LIMIT 200`);
+    document.getElementById('browseOutput').innerHTML = renderTableHTML(res);
+  } catch(e) {
+    document.getElementById('browseOutput').innerHTML = `<p class="text-red-400 p-4 text-sm">${esc(e.message)}</p>`;
+  }
+}
+
+// ═══════════════════════════════════════════
+//  CRUD OPERATIONS
+// ═══════════════════════════════════════════
+function addStudent(e) {
+  e.preventDefault();
+  try {
+    run(`INSERT INTO Student (Name, BirthDate, Gender, Address, ContactNumber, Email, LRN) VALUES (?,?,?,?,?,?,?)`, [
+      document.getElementById('sName').value,
+      document.getElementById('sBirthDate').value,
+      document.getElementById('sGender').value,
+      document.getElementById('sAddress').value,
+      document.getElementById('sContact').value,
+      document.getElementById('sEmail').value,
+      document.getElementById('sLRN').value || null,
+    ]);
+    toast('Student registered successfully!', 'success');
+    logActivity(1, 'Registered student: ' + document.getElementById('sName').value);
+    document.getElementById('formStudent').reset();
+    refreshAll();
+  } catch(err) {
+    toast('Error: ' + err.message, 'error');
+  }
+  return false;
+}
+
+function addEnrollment(e) {
+  e.preventDefault();
+  try {
+    run(`INSERT INTO Enrollment (EnrollmentDate, EnrollmentStatus, StudentID, SectionID, AcadYearID, YearLevel, Strand) VALUES (?,?,?,?,?,?,?)`, [
+      document.getElementById('eDate').value,
+      document.getElementById('eStatus').value,
+      document.getElementById('eStudent').value,
+      document.getElementById('eSection').value,
+      document.getElementById('eAcadYear').value,
+      document.getElementById('eYearLevel').value,
+      document.getElementById('eStrand').value,
+    ]);
+    toast('Enrollment created!', 'success');
+    logActivity(2, 'Created enrollment for StudentID: ' + document.getElementById('eStudent').value);
+    document.getElementById('formEnrollment').reset();
+    refreshAll();
+  } catch(err) {
+    toast('Error: ' + err.message, 'error');
+  }
+  return false;
+}
+
+function addGrade(e) {
+  e.preventDefault();
+  try {
+    run(`INSERT OR REPLACE INTO Grades (EnrollmentID, SubjectID, StudentGrade) VALUES (?,?,?)`, [
+      document.getElementById('gEnrollment').value,
+      document.getElementById('gSubject').value,
+      parseFloat(document.getElementById('gGrade').value),
+    ]);
+    toast('Grade submitted!', 'success');
+    logActivity(3, 'Submitted grade for EnrollmentID: ' + document.getElementById('gEnrollment').value);
+    document.getElementById('formGrade').reset();
+    refreshAll();
+  } catch(err) {
+    toast('Error: ' + err.message, 'error');
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════
+//  REPORT CARD (Derived via JOIN)
+// ═══════════════════════════════════════════
+function generateReportCard() {
+  const studentId = document.getElementById('rcStudent').value;
+  const acadYearId = document.getElementById('rcAcadYear').value;
+  const output = document.getElementById('reportCardOutput');
+
+  if (!studentId) { toast('Please select a student.', 'error'); return; }
+
+  try {
+    // Student info
+    const student = query("SELECT * FROM Student WHERE StudentID = ?", [studentId]);
+    if (!student.values.length) { toast('Student not found.', 'error'); return; }
+    const sRow = student.values[0];
+    const sName = sRow[student.columns.indexOf('Name')];
+    const sLRN  = sRow[student.columns.indexOf('LRN')];
+
+    // Build grade query
+    let gradeSQL = `
+      SELECT
+        sub.SubjectCode,
+        sub.SubjectName,
+        sub.Units,
+        g.StudentGrade,
+        sec.SectionName,
+        ay.Term AS AcademicYear,
+        e.YearLevel,
+        e.Strand
+      FROM Grades g
+      JOIN Enrollment e ON g.EnrollmentID = e.EnrollmentID
+      JOIN Student st ON e.StudentID = st.StudentID
+      JOIN Subject sub ON g.SubjectID = sub.SubjectID
+      JOIN Section sec ON e.SectionID = sec.SectionID
+      JOIN AcademicYear ay ON e.AcadYearID = ay.AcadYearID
+      WHERE st.StudentID = ?
+    `;
+    const params = [studentId];
+    if (acadYearId) { gradeSQL += " AND e.AcadYearID = ?"; params.push(acadYearId); }
+    gradeSQL += " ORDER BY ay.StartDate, sub.SubjectCode";
+
+    const grades = query(gradeSQL, params);
+
+    if (!grades.values.length) {
+      output.innerHTML = `<div class="text-surface-200 text-sm p-6 text-center glass mt-4">No grades found for this student.</div>`;
+      return;
+    }
+
+    // Calculate weighted average
+    const unitsIdx = grades.columns.indexOf('Units');
+    const gradeIdx = grades.columns.indexOf('StudentGrade');
+    let totalWeighted = 0, totalUnits = 0;
+    grades.values.forEach(row => {
+      const u = row[unitsIdx] || 1;
+      const g = row[gradeIdx];
+      if (g !== null) { totalWeighted += g * u; totalUnits += u; }
+    });
+    const gpa = totalUnits > 0 ? (totalWeighted / totalUnits).toFixed(2) : '—';
+
+    // Determine GPA color / remark
+    const gpaNum = parseFloat(gpa);
+    let gpaColor = 'text-emerald-400', remark = 'Excellent', remarkBg = 'bg-emerald-500/15';
+    if (gpaNum < 75) { gpaColor = 'text-red-400'; remark = 'Needs Improvement'; remarkBg = 'bg-red-500/15'; }
+    else if (gpaNum < 80) { gpaColor = 'text-amber-400'; remark = 'Satisfactory'; remarkBg = 'bg-amber-500/15'; }
+    else if (gpaNum < 85) { gpaColor = 'text-yellow-300'; remark = 'Good'; remarkBg = 'bg-yellow-500/15'; }
+    else if (gpaNum < 90) { gpaColor = 'text-cyan-400'; remark = 'Very Good'; remarkBg = 'bg-cyan-500/15'; }
+
+    // Meta from first row
+    const section   = grades.values[0][grades.columns.indexOf('SectionName')];
+    const yearLevel = grades.values[0][grades.columns.indexOf('YearLevel')];
+    const strand    = grades.values[0][grades.columns.indexOf('Strand')];
+    const acadYear  = grades.values[0][grades.columns.indexOf('AcademicYear')];
+
+    output.innerHTML = `
+      <div class="anim-fade-up">
+        <!-- Header -->
+        <div class="report-header mb-6">
+          <div class="flex flex-col sm:flex-row justify-between gap-4">
+            <div>
+              <h4 class="text-lg font-bold text-white mb-1">📄 Student Report Card</h4>
+              <p class="text-sm text-surface-200">Dynamically derived from enrolled grades via SQL JOIN</p>
+            </div>
+            <div class="text-right">
+              <div class="text-xs text-brand-400 font-semibold uppercase tracking-wider">Weighted Average</div>
+              <div class="text-3xl font-extrabold ${gpaColor}">${gpa}</div>
+              <span class="inline-block mt-1 px-3 py-1 rounded-full text-xs font-semibold ${remarkBg} ${gpaColor}">${remark}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Student Meta -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div class="glass p-4 rounded-xl">
+            <div class="text-[.65rem] font-semibold uppercase text-brand-400 tracking-wider mb-1">Student</div>
+            <div class="text-sm font-semibold text-white">${esc(sName)}</div>
+          </div>
+          <div class="glass p-4 rounded-xl">
+            <div class="text-[.65rem] font-semibold uppercase text-brand-400 tracking-wider mb-1">LRN</div>
+            <div class="text-sm font-mono text-surface-200">${esc(sLRN || '—')}</div>
+          </div>
+          <div class="glass p-4 rounded-xl">
+            <div class="text-[.65rem] font-semibold uppercase text-brand-400 tracking-wider mb-1">Section / Strand</div>
+            <div class="text-sm font-semibold text-white">${esc(section)} · ${esc(strand)}</div>
+          </div>
+          <div class="glass p-4 rounded-xl">
+            <div class="text-[.65rem] font-semibold uppercase text-brand-400 tracking-wider mb-1">Year Level / Term</div>
+            <div class="text-sm font-semibold text-white">${esc(yearLevel)} · ${esc(acadYear)}</div>
+          </div>
+        </div>
+
+        <!-- Grades Table -->
+        <div class="overflow-auto rounded-xl border border-white/5">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th><th>Subject</th><th>Units</th><th>Grade</th><th>Remark</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${grades.values.map(row => {
+                const code  = row[grades.columns.indexOf('SubjectCode')];
+                const name  = row[grades.columns.indexOf('SubjectName')];
+                const units = row[grades.columns.indexOf('Units')];
+                const grade = row[grades.columns.indexOf('StudentGrade')];
+                let rowRemark = '—', rowColor = 'text-surface-200';
+                if (grade !== null) {
+                  if (grade >= 90)      { rowRemark = 'Outstanding'; rowColor = 'text-emerald-400'; }
+                  else if (grade >= 85) { rowRemark = 'Very Satisfactory'; rowColor = 'text-cyan-400'; }
+                  else if (grade >= 80) { rowRemark = 'Satisfactory'; rowColor = 'text-yellow-300'; }
+                  else if (grade >= 75) { rowRemark = 'Fairly Satisfactory'; rowColor = 'text-amber-400'; }
+                  else                  { rowRemark = 'Did Not Meet Expectations'; rowColor = 'text-red-400'; }
+                }
+                return `<tr>
+                  <td class="font-mono text-brand-300">${esc(code)}</td>
+                  <td>${esc(name)}</td>
+                  <td class="text-center">${units}</td>
+                  <td class="font-semibold ${rowColor}">${grade !== null ? grade.toFixed(2) : '—'}</td>
+                  <td class="${rowColor} text-xs font-medium">${rowRemark}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="border-t border-white/10">
+                <td colspan="2" class="font-bold text-white text-right">Weighted Average</td>
+                <td class="text-center font-semibold text-surface-200">${totalUnits}</td>
+                <td class="font-extrabold ${gpaColor} text-lg">${gpa}</td>
+                <td class="${gpaColor} font-semibold text-xs">${remark}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+
+    logActivity(1, 'Generated report card for StudentID: ' + studentId);
+  } catch(err) {
+    output.innerHTML = `<p class="text-red-400 text-sm p-4">${esc(err.message)}</p>`;
+  }
+}
+
+// ═══════════════════════════════════════════
+//  SQL CONSOLE
+// ═══════════════════════════════════════════
+function runSQL() {
+  const sql = document.getElementById('sqlInput').value.trim();
+  const output = document.getElementById('sqlOutput');
+  if (!sql) { toast('Enter a SQL query first.', 'error'); return; }
+
+  try {
+    const results = db.exec(sql);
+    if (results.length === 0) {
+      output.innerHTML = '<p class="text-emerald-400 text-sm p-4">✓ Query executed successfully. No rows returned.</p>';
+      refreshAll();
+    } else {
+      let html = '';
+      results.forEach((res, i) => {
+        if (results.length > 1) html += `<p class="text-xs text-brand-400 font-semibold px-4 pt-3">Result Set ${i+1}</p>`;
+        html += renderTableHTML(res);
+      });
+      output.innerHTML = html;
+    }
+    logActivity(1, 'Executed SQL: ' + sql.substring(0, 80));
+    toast('Query executed', 'success');
+  } catch(err) {
+    output.innerHTML = `<div class="p-4"><p class="text-red-400 text-sm font-semibold mb-1">⚠ SQL Error</p><p class="text-red-300 text-xs font-mono">${esc(err.message)}</p></div>`;
+    toast('SQL error', 'error');
+  }
+}
+
+// Keyboard shortcut: Ctrl+Enter to run
+document.getElementById('sqlInput').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSQL(); }
+});
+
+// SQL Snippets
+const snippets = {
+  tables:      "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name;",
+  students:    "SELECT * FROM Student ORDER BY StudentID;",
+  enrollments: "SELECT e.EnrollmentID, s.Name AS Student, sec.SectionName, ay.Term,\n       e.YearLevel, e.Strand, e.EnrollmentStatus\nFROM Enrollment e\nJOIN Student s ON e.StudentID = s.StudentID\nJOIN Section sec ON e.SectionID = sec.SectionID\nJOIN AcademicYear ay ON e.AcadYearID = ay.AcadYearID\nORDER BY e.EnrollmentID;",
+  grades:      "SELECT st.Name AS Student, sub.SubjectCode, sub.SubjectName,\n       g.StudentGrade, sec.SectionName\nFROM Grades g\nJOIN Enrollment e ON g.EnrollmentID = e.EnrollmentID\nJOIN Student st ON e.StudentID = st.StudentID\nJOIN Subject sub ON g.SubjectID = sub.SubjectID\nJOIN Section sec ON e.SectionID = sec.SectionID\nORDER BY st.Name, sub.SubjectCode;",
+  gpa:         "SELECT st.Name,\n       ROUND(SUM(g.StudentGrade * sub.Units) / SUM(sub.Units), 2) AS WeightedAvg,\n       SUM(sub.Units) AS TotalUnits,\n       COUNT(*) AS SubjectCount\nFROM Grades g\nJOIN Enrollment e ON g.EnrollmentID = e.EnrollmentID\nJOIN Student st ON e.StudentID = st.StudentID\nJOIN Subject sub ON g.SubjectID = sub.SubjectID\nGROUP BY st.StudentID\nORDER BY WeightedAvg DESC;",
+  faculty:     "SELECT f.EmployeeID, f.Name, f.Position, d.DepartmentName, f.HireDate\nFROM Faculty f\nLEFT JOIN Department d ON f.DepartmentID = d.DepartmentID\nORDER BY f.Name;",
+  logs:        "SELECT l.LogID, u.Username, l.Action, l.Timestamp\nFROM ActivityLogs l\nLEFT JOIN User u ON l.UserID = u.UserID\nORDER BY l.LogID DESC\nLIMIT 50;",
+};
+
+function loadSnippet(key) {
+  if (snippets[key]) {
+    document.getElementById('sqlInput').value = snippets[key];
+    document.getElementById('sqlSnippets').value = '';
+  }
+}
+
+// ═══════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════
+initDB();
+</script>
+</body>
+</html>
